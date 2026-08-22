@@ -77,7 +77,7 @@
       </div>
     </main>
 
-    <StatusFooter :loading="loading" :refreshing="refreshing" @refresh="manualRefresh" />
+    <StatusFooter :loading="loading" :refreshing="refreshing" :siteSettings="siteSettings" @refresh="manualRefresh" />
   </div>
 </template>
 

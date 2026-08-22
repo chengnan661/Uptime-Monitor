@@ -43,6 +43,11 @@
                   <input v-model.trim="settings.site_logo_url" placeholder="https://example.com/logo.png" class="w-full border border-slate-700 rounded-xl px-3 py-2.5 text-sm bg-slate-800/80 text-white focus:border-emerald-500 outline-none">
                   <span class="text-xs text-slate-500">填写后会替换状态页左上角默认图标。</span>
                 </label>
+
+                <label class="grid gap-2">
+                  <span class="text-sm font-medium text-slate-300">自定义页脚 / 备案信息 <span class="text-xs font-normal text-slate-500">可选</span></span>
+                  <input v-model.trim="settings.custom_footer" placeholder="例如: 粤ICP备XXXXXXXX号" class="w-full border border-slate-700 rounded-xl px-3 py-2.5 text-sm bg-slate-800/80 text-white focus:border-emerald-500 outline-none">
+                </label>
               </section>
 
               <section class="space-y-4">

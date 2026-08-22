@@ -29,7 +29,10 @@
             <i class="fas fa-cog text-xs"></i> 站点设置
           </button>
           <button @click="exportMonitors" class="flex items-center gap-1.5 px-3 py-2 bg-slate-200 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600/50 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-medium rounded-xl transition-all cursor-pointer border border-slate-300 dark:border-slate-600/50">
-            <i class="fas fa-download text-xs"></i> 导出
+            <i class="fas fa-download text-xs"></i> 导出配置
+          </button>
+          <button @click="handleExportSla" class="flex items-center gap-1.5 px-3 py-2 bg-slate-200 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600/50 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-medium rounded-xl transition-all cursor-pointer border border-slate-300 dark:border-slate-600/50">
+            <i class="fas fa-file-csv text-xs"></i> SLA 月报
           </button>
           <button @click="showChannels = true" class="flex items-center gap-1.5 px-3 py-2 bg-slate-200 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600/50 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-medium rounded-xl transition-all cursor-pointer border border-slate-300 dark:border-slate-600/50">
             <i class="fas fa-bell text-xs"></i> 通知渠道
@@ -135,6 +138,7 @@ import { useTheme } from '../composables/useTheme';
 import { useToast } from '../composables/useToast';
 import { API_BASE, fetchT, withRetry } from '../utils/api';
 import { formatDateFull, getDaysRemaining, getExpiryClassAdmin } from '../utils/format';
+import { exportSlaCsv } from '../utils/sla';
 
 // 子组件
 import LoginDialog from '../components/admin/LoginDialog.vue';
@@ -157,247 +161,253 @@ const { addToast } = useToast();
 const footerAuthor = import.meta.env.VITE_FOOTER_AUTHOR || 'Uptime Monitor';
 const footerUrl = import.meta.env.VITE_FOOTER_URL || '#';
 
-// ── 核心状态 ──
 const monitors = ref([]);
 const loading = ref(false);
 const error = ref(null);
 const lastRefreshed = ref('');
 const health = ref(null);
-
-// ── 搜索/排序/筛选 ──
+const activeTag = ref('all');
 const searchQuery = ref('');
-const sortKey = ref('');
-const activeTag = ref('');
+const sortKey = ref('sort_order');
 const selectedIds = ref([]);
 
-// ── Modal 控制 ──
 const showAddModal = ref(false);
 const showConfig = ref(false);
 const showLogs = ref(false);
 const showChannels = ref(false);
 const showIncidents = ref(false);
 const showSettings = ref(false);
-
-// ── 添加监控 ──
-const newMonitor = ref({ name: '', url: '', method: 'GET', keyword: '', user_agent: '', tags: '', request_headers: '', request_body: '', interval: 300, check_ssl: true, check_domain: true, alert_silence_hours: '24', alert_error_rate: 0 });
 const submitting = ref(false);
-
-// ── 配置面板 ──
-const configTarget = ref(null);
-const configForm = ref({});
 const configSaving = ref(false);
 
-// ── 日志面板 ──
+const confirmModal = ref({ show: false, message: '', resolve: null });
+
+const newMonitor = ref({
+    name: '', url: '', method: 'GET', interval: 300,
+    keyword: '', user_agent: '', tags: '',
+    request_headers: '', request_body: '',
+    expected_codes: '200-299', channel_ids: '',
+    check_ssl: true, check_domain: true, alert_error_rate: 0
+});
+
+const configTarget = ref(null);
+const configForm = ref({});
+const currentMonitor = ref(null);
 const logs = ref([]);
 const logsLoading = ref(false);
-const currentMonitor = ref(null);
-const logOffset = ref(0);
-const logLimit = 50;
 const hasMoreLogs = ref(false);
+const uptimeStats = ref(null);
 
-// ── 确认对话框 ──
-const confirmModal = ref({ show: false, message: '', resolve: null });
-const showConfirm = (message) => new Promise(resolve => {
-    confirmModal.value = { show: true, message, resolve };
-});
-const handleConfirm = (result) => {
-    if (confirmModal.value.resolve) confirmModal.value.resolve(result);
-    confirmModal.value.show = false;
-};
-
-// ── 带鉴权 fetch ──
-const authFetch = async (url, options = {}) => {
-    const headers = { ...options.headers, 'Authorization': `Bearer ${storedToken.value}` };
-    const res = await fetchT(url, { ...options, headers });
-    if (res.status === 401) {
-        sessionStorage.removeItem('uptime_admin_token');
-        sessionStorage.removeItem('uptime_admin_password');
-        location.reload();
-    }
-    return res;
-};
-
-// ── 统计概览 ──
-const stats = computed(() => ({
-    total: monitors.value.length,
-    online: monitors.value.filter(m => m.status === 'UP').length,
-    offline: monitors.value.filter(m => m.status === 'DOWN' || m.status === 'RETRYING').length,
-    paused: monitors.value.filter(m => m.paused === 1).length,
-}));
-
-// ── Tag 和筛选 ──
-const allTags = computed(() => {
-    const tags = new Set();
-    monitors.value.forEach(m => { if (m.tags) m.tags.split(',').forEach(t => { const s = t.trim(); if (s) tags.add(s); }); });
-    return [...tags].sort();
-});
-const filteredMonitors = computed(() => {
-    let list = monitors.value;
-    if (activeTag.value) list = list.filter(m => m.tags && m.tags.split(',').map(t => t.trim()).includes(activeTag.value));
-    const q = searchQuery.value.trim().toLowerCase();
-    if (q) list = list.filter(m => (m.name && m.name.toLowerCase().includes(q)) || (m.url && m.url.toLowerCase().includes(q)));
-    if (sortKey.value) {
-        list = [...list].sort((a, b) => {
-            switch (sortKey.value) {
-                case 'name': return (a.name || '').localeCompare(b.name || '', 'zh-CN');
-                case 'status': { const order = { 'DOWN': 0, 'RETRYING': 1, 'UP': 2, 'PAUSED': 3 }; return (order[a.status] ?? 9) - (order[b.status] ?? 9); }
-                case 'latency': return (a._latency ?? 9999) - (b._latency ?? 9999);
-                case 'ssl': { const dA = a.cert_expiry ? new Date(a.cert_expiry).getTime() : Infinity; const dB = b.cert_expiry ? new Date(b.cert_expiry).getTime() : Infinity; return dA - dB; }
-                default: return 0;
-            }
-        });
-    }
-    return list;
-});
-
-// ── 数据获取 ──
-const fetchMonitors = async () => {
-    if (!isAuthenticated.value) return;
-    loading.value = true; error.value = null;
-    try {
-        const [adminRes, publicRes] = await Promise.all([
-            withRetry(() => authFetch(`${API_BASE}/monitors`)),
-            fetchT(`${API_BASE}/monitors/public/details`).catch(() => null)
-        ]);
-        if (adminRes && adminRes.ok) {
-            const adminData = await adminRes.json();
-            let publicMap = {};
-            if (publicRes && publicRes.ok) { try { const pd = await publicRes.json(); (pd.monitors || []).forEach(pm => { publicMap[pm.id] = pm; }); } catch {} }
-            monitors.value = adminData.map(m => { const pm = publicMap[m.id]; m._latency = pm?.latency ?? null; m._sparkData = pm?.recent_latencies ?? null; return m; });
-            lastRefreshed.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        } else {
-            let errorMsg = `数据加载失败 (${adminRes?.status || '网络错误'})`;
-            if (adminRes) { try { const d = await adminRes.json(); if (d?.error) errorMsg = `API 错误: ${d.error}`; } catch {} }
-            error.value = errorMsg;
-        }
-    } catch { error.value = '连接服务器超时，请稍后刷新页面。'; }
-    finally { loading.value = false; }
-};
-
-const fetchHealth = async () => {
-    if (!isAuthenticated.value) return;
-    try {
-        const res = await authFetch(`${API_BASE}/health`);
-        if (res.ok) health.value = await res.json();
-    } catch {}
+const authFetch = (url, opts = {}) => {
+    const token = storedToken.value;
+    const headers = { ...opts.headers };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetchT(url, { ...opts, headers });
 };
 
 const onLogin = () => { fetchMonitors(); fetchHealth(); };
 
-// ── 添加监控 ──
+const fetchMonitors = async () => {
+    loading.value = true;
+    error.value = null;
+    try {
+        const r = await authFetch(`${API_BASE}/monitors`);
+        if (r.ok) {
+            monitors.value = await r.json();
+            lastRefreshed.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        } else if (r.status === 401) {
+            logout();
+        } else {
+            error.value = `拉取数据失败 (${r.status})`;
+        }
+    } catch { error.value = '连接服务器超时'; }
+    finally { loading.value = false; }
+};
+
+const fetchHealth = async () => {
+    try {
+        const r = await fetchT(`${API_BASE}/health`);
+        if (r.ok) health.value = await r.json();
+    } catch {}
+};
+
+const stats = computed(() => {
+    const total = monitors.value.length;
+    const up = monitors.value.filter(m => m.status === 'UP').length;
+    const down = monitors.value.filter(m => m.status === 'DOWN').length;
+    const paused = monitors.value.filter(m => m.paused === 1 || m.status === 'PAUSED').length;
+    return { total, up, down, paused };
+});
+
+const allTags = computed(() => {
+    const set = new Set();
+    for (const m of monitors.value) {
+        if (m.tags) m.tags.split(',').forEach(t => { if (t.trim()) set.add(t.trim()); });
+    }
+    return [...set];
+});
+
+const filteredMonitors = computed(() => {
+    let list = monitors.value;
+    if (activeTag.value !== 'all') {
+        list = list.filter(m => m.tags && m.tags.split(',').map(t => t.trim()).includes(activeTag.value));
+    }
+    if (searchQuery.value.trim()) {
+        const q = searchQuery.value.toLowerCase();
+        list = list.filter(m => m.name.toLowerCase().includes(q) || m.url.toLowerCase().includes(q));
+    }
+    return list;
+});
+
 const addMonitor = async () => {
-    if (!newMonitor.value.name || !newMonitor.value.url) { addToast('请填写名称和 URL', 'error'); return; }
+    if (!newMonitor.value.name || !newMonitor.value.url) return;
     submitting.value = true;
     try {
-        const body = { ...newMonitor.value, check_ssl: newMonitor.value.check_ssl ? 1 : 0, check_domain: newMonitor.value.check_domain ? 1 : 0, interval: Number(newMonitor.value.interval) };
-        const res = await authFetch(`${API_BASE}/monitors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (res.ok) { newMonitor.value = { name: '', url: '', method: 'GET', keyword: '', user_agent: '', tags: '', request_headers: '', request_body: '', interval: 300, check_ssl: true, check_domain: true, alert_silence_hours: '24', alert_error_rate: 0 }; showAddModal.value = false; addToast('监控添加成功', 'success'); fetchMonitors(); }
-        else { const d = await res.json(); addToast(d.error || '添加失败', 'error'); }
-    } catch { addToast('网络错误', 'error'); }
+        const payload = {
+            ...newMonitor.value,
+            check_ssl: newMonitor.value.check_ssl ? 1 : 0,
+            check_domain: newMonitor.value.check_domain ? 1 : 0,
+        };
+        const r = await authFetch(`${API_BASE}/monitors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (r.ok) {
+            addToast('添加监控成功', 'success');
+            showAddModal.value = false;
+            newMonitor.value = { name: '', url: '', method: 'GET', interval: 300, keyword: '', user_agent: '', tags: '', request_headers: '', request_body: '', expected_codes: '200-299', channel_ids: '', check_ssl: true, check_domain: true, alert_error_rate: 0 };
+            fetchMonitors();
+        } else {
+            const d = await r.json(); addToast(d.error || '添加失败', 'error');
+        }
+    } catch { addToast('请求失败', 'error'); }
     finally { submitting.value = false; }
 };
 
-// ── 删除 ──
-const deleteMonitor = async (m) => {
-    const ok = await showConfirm(`确定要删除「${m.name}」吗？`); if (!ok) return;
-    try { const res = await authFetch(`${API_BASE}/monitors/${m.id}`, { method: 'DELETE' }); if (res.ok) { addToast(`已删除：${m.name}`, 'success'); fetchMonitors(); } else { addToast('删除失败', 'error'); } } catch { addToast('网络错误', 'error'); }
-};
-
-// ── 手动检测 ──
 const forceCheck = async (m) => {
-    if (m._checking) return; m._checking = true;
-    try { const res = await authFetch(`${API_BASE}/monitors/${m.id}/check`, { method: 'POST' }); if (res.ok) { addToast(`已更新：${m.name}`, 'success'); fetchMonitors(); } } catch { addToast('网络错误', 'error'); }
-    finally { m._checking = false; }
+    try {
+        const r = await authFetch(`${API_BASE}/monitors/${m.id}/check`, { method: 'POST' });
+        if (r.ok) { addToast(`已触发检测: ${m.name}`, 'info'); fetchMonitors(); }
+    } catch { addToast('触发检测失败', 'error'); }
 };
 
-// ── 暂停/恢复 ──
 const togglePause = async (m) => {
-    try { const res = await authFetch(`${API_BASE}/monitors/${m.id}/pause`, { method: 'PATCH' }); if (res.ok) { const d = await res.json(); addToast(d.paused ? `已暂停：${m.name}` : `已恢复：${m.name}`, 'info'); fetchMonitors(); } } catch { addToast('网络错误', 'error'); }
+    try {
+        const r = await authFetch(`${API_BASE}/monitors/${m.id}/pause`, { method: 'PATCH' });
+        if (r.ok) { fetchMonitors(); }
+    } catch { addToast('操作失败', 'error'); }
 };
 
-// ── 克隆 ──
-const cloneMonitor = (m) => {
-    newMonitor.value = { name: m.name + ' (Copy)', url: m.url, method: m.method || 'GET', keyword: m.keyword || '', user_agent: m.user_agent || '', tags: m.tags || '', request_headers: m.request_headers || '', request_body: m.request_body || '', interval: m.interval || 300, check_ssl: m.check_ssl !== 0, check_domain: m.check_domain !== 0, alert_silence_hours: m.alert_silence_uptime || 24, alert_error_rate: m.alert_error_rate || 0 };
-    showAddModal.value = true;
-};
-
-// ── 配置 ──
 const openConfig = (m) => {
     configTarget.value = m;
-    configForm.value = { name: m.name || '', url: m.url || '', method: m.method || 'GET', keyword: m.keyword || '', user_agent: m.user_agent || '', tags: m.tags || '', request_headers: m.request_headers || '', request_body: m.request_body || '', interval: m.interval || 300, check_ssl: m.check_ssl !== 0, check_domain: m.check_domain !== 0, alert_silence_uptime: m.alert_silence_uptime ?? 24, alert_silence_ssl: m.alert_silence_ssl ?? 24, alert_silence_domain: m.alert_silence_domain ?? 24, alert_error_rate: m.alert_error_rate ?? 0 };
+    configForm.value = {
+        name: m.name, url: m.url, method: m.method || 'GET', interval: m.interval || 300,
+        keyword: m.keyword || '', user_agent: m.user_agent || '', tags: m.tags || '',
+        request_headers: m.request_headers || '', request_body: m.request_body || '',
+        expected_codes: m.expected_codes || '200-299', channel_ids: m.channel_ids || '',
+        check_ssl: (m.check_ssl ?? 1) === 1, check_domain: (m.check_domain ?? 1) === 1,
+        alert_silence_uptime: m.alert_silence_uptime ?? 24, alert_silence_ssl: m.alert_silence_ssl ?? 24,
+        alert_silence_domain: m.alert_silence_domain ?? 24, alert_error_rate: m.alert_error_rate ?? 0
+    };
     showConfig.value = true;
 };
 
 const saveConfig = async () => {
-    if (!configTarget.value) return; configSaving.value = true;
+    if (!configTarget.value) return;
+    configSaving.value = true;
     try {
-        const body = { name: configForm.value.name, url: configForm.value.url, method: configForm.value.method || 'GET', keyword: configForm.value.keyword, user_agent: configForm.value.user_agent, tags: configForm.value.tags || '', request_headers: configForm.value.request_headers || '', request_body: configForm.value.request_body || '', interval: Number(configForm.value.interval), check_ssl: configForm.value.check_ssl ? 1 : 0, check_domain: configForm.value.check_domain ? 1 : 0, alert_silence_uptime: Number(configForm.value.alert_silence_uptime), alert_silence_ssl: Number(configForm.value.alert_silence_ssl), alert_silence_domain: Number(configForm.value.alert_silence_domain), alert_error_rate: Number(configForm.value.alert_error_rate ?? 0) };
-        const res = await authFetch(`${API_BASE}/monitors/${configTarget.value.id}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (res.ok) { addToast('配置已保存', 'success'); showConfig.value = false; fetchMonitors(); }
-        else { const d = await res.json(); addToast(d.error || '保存失败', 'error'); }
-    } catch { addToast('网络错误', 'error'); }
+        const r = await authFetch(`${API_BASE}/monitors/${configTarget.value.id}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(configForm.value) });
+        if (r.ok) { addToast('保存配置成功', 'success'); showConfig.value = false; fetchMonitors(); }
+        else { const d = await r.json(); addToast(d.error || '保存失败', 'error'); }
+    } catch { addToast('请求失败', 'error'); }
     finally { configSaving.value = false; }
 };
 
-// ── 日志 ──
-const viewLogs = async (monitor) => {
-    currentMonitor.value = monitor; logs.value = []; logOffset.value = 0; hasMoreLogs.value = false; logsLoading.value = true; showLogs.value = true;
-    try { const res = await authFetch(`${API_BASE}/monitors/${monitor.id}/logs?limit=${logLimit}&offset=0`); if (res.ok) { const d = await res.json(); logs.value = d; hasMoreLogs.value = d.length >= logLimit; logOffset.value = d.length; } } catch {} finally { logsLoading.value = false; }
-};
-const loadMoreLogs = async () => {
-    if (!currentMonitor.value || logsLoading.value) return; logsLoading.value = true;
-    try { const res = await authFetch(`${API_BASE}/monitors/${currentMonitor.value.id}/logs?limit=${logLimit}&offset=${logOffset.value}`); if (res.ok) { const d = await res.json(); logs.value = [...logs.value, ...d]; hasMoreLogs.value = d.length >= logLimit; logOffset.value += d.length; } } catch {} finally { logsLoading.value = false; }
+const viewLogs = async (m) => {
+    currentMonitor.value = m;
+    logsLoading.value = true;
+    showLogs.value = true;
+    try {
+        const [rLogs, rStats] = await Promise.all([
+            authFetch(`${API_BASE}/monitors/${m.id}/logs?limit=50`),
+            authFetch(`${API_BASE}/monitors/${m.id}/stats`),
+        ]);
+        if (rLogs.ok) logs.value = await rLogs.json();
+        if (rStats.ok) uptimeStats.value = await rStats.json();
+    } catch {}
+    finally { logsLoading.value = false; }
 };
 
-// ── Sparkline / Uptime 计算 ──
 const sparklineComputed = computed(() => {
-    if (!logs.value || logs.value.length < 2) return null;
-    const ordered = [...logs.value].reverse();
-    const W = 560, H = 56, P = 6;
-    const latencies = ordered.map(l => l.latency || 0);
-    const maxL = Math.max(...latencies, 1);
-    const points = ordered.map((log, i) => ({ x: P + (i / Math.max(ordered.length - 1, 1)) * (W - P * 2), y: H - P - ((log.latency || 0) / maxL) * (H - P * 2), fail: !!log.is_fail }));
-    let path = '', penDown = false;
-    points.forEach(p => { if (!p.fail) { path += penDown ? ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}` : `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}`; penDown = true; } else { penDown = false; } });
-    return { points, path, maxL, W, H };
-});
-
-const uptimeStats = computed(() => {
-    if (!logs.value || logs.value.length === 0) return null;
-    const calc = (hours) => { const cutoff = Date.now() - hours * 3600000; const filtered = logs.value.filter(l => { const t = new Date(l.created_at).getTime(); return !isNaN(t) && t >= cutoff; }); if (filtered.length === 0) return null; return ((filtered.filter(l => !l.is_fail).length / filtered.length) * 100).toFixed(1); };
-    return { h24: calc(24), d7: calc(24*7), d30: calc(24*30) };
+    const list = [...logs.value].reverse().filter(l => l.is_fail === 0);
+    return list.slice(-20).map(l => l.latency);
 });
 
 const latencyPercentiles = computed(() => {
-    if (!logs.value || logs.value.length < 5) return null;
-    const lats = logs.value.filter(l => !l.is_fail && l.latency > 0).map(l => l.latency).sort((a, b) => a - b);
-    if (lats.length < 5) return null;
-    const pct = (arr, p) => arr[Math.max(0, Math.min(Math.ceil(arr.length * p / 100) - 1, arr.length - 1))];
-    return { p95: pct(lats, 95), p99: pct(lats, 99) };
+    const valid = logs.value.filter(l => l.is_fail === 0 && l.latency > 0).map(l => l.latency).sort((a, b) => a - b);
+    if (valid.length === 0) return { avg: 0, p95: 0, p99: 0 };
+    const avg = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
+    const p95 = valid[Math.floor(valid.length * 0.95)] || valid[valid.length - 1];
+    const p99 = valid[Math.floor(valid.length * 0.99)] || valid[valid.length - 1];
+    return { avg, p95, p99 };
 });
 
-// ── 批量操作 ──
-const batchAction = async (action) => {
-    if (selectedIds.value.length === 0) return;
-    if (action === 'delete') { const ok = await showConfirm(`确定批量删除 ${selectedIds.value.length} 个监控？`); if (!ok) return; }
-    try { const res = await authFetch(`${API_BASE}/monitors/batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ids: selectedIds.value }) }); if (res.ok) { const d = await res.json(); addToast(`操作成功，影响 ${d.affected} 项`, 'success'); selectedIds.value = []; fetchMonitors(); } else { addToast('批量操作失败', 'error'); } } catch { addToast('网络错误', 'error'); }
+const cloneMonitor = (m) => {
+    newMonitor.value = {
+        name: m.name + ' (副本)', url: m.url, method: m.method || 'GET', interval: m.interval || 300,
+        keyword: m.keyword || '', user_agent: m.user_agent || '', tags: m.tags || '',
+        request_headers: m.request_headers || '', request_body: m.request_body || '',
+        expected_codes: m.expected_codes || '200-299', channel_ids: m.channel_ids || '',
+        check_ssl: (m.check_ssl ?? 1) === 1, check_domain: (m.check_domain ?? 1) === 1,
+        alert_error_rate: m.alert_error_rate ?? 0
+    };
+    showAddModal.value = true;
 };
 
-// ── 排序 ──
+const deleteMonitor = async (m) => {
+    confirmModal.value = { show: true, message: `确定要删除监控项「${m.name}」吗？此操作不可撤销。`, resolve: null };
+    const ok = await new Promise(res => { confirmModal.value.resolve = res; });
+    if (ok) {
+        try {
+            const r = await authFetch(`${API_BASE}/monitors/${m.id}`, { method: 'DELETE' });
+            if (r.ok) { addToast('删除成功', 'success'); fetchMonitors(); }
+        } catch { addToast('删除失败', 'error'); }
+    }
+};
+
+const handleConfirm = (val) => {
+    if (confirmModal.value.resolve) confirmModal.value.resolve(val);
+    confirmModal.value.show = false;
+};
+
+const batchAction = async (action) => {
+    if (selectedIds.value.length === 0) return;
+    if (action === 'delete') {
+        confirmModal.value = { show: true, message: `确定要批量删除选中的 ${selectedIds.value.length} 个监控项吗？`, resolve: null };
+        const ok = await new Promise(res => { confirmModal.value.resolve = res; });
+        if (!ok) return;
+    }
+    try {
+        const r = await authFetch(`${API_BASE}/monitors/batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ids: selectedIds.value }) });
+        if (r.ok) { addToast('批量操作成功', 'success'); selectedIds.value = []; fetchMonitors(); }
+    } catch { addToast('批量操作失败', 'error'); }
+};
+
 const handleReorder = async (ids) => {
     try { await authFetch(`${API_BASE}/monitors/reorder`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }); addToast('排序已保存', 'success'); fetchMonitors(); } catch { addToast('排序保存失败', 'error'); }
 };
 
-// ── 导出 ──
 const exportMonitors = () => {
-    const data = monitors.value.map(m => ({ name: m.name, url: m.url, method: m.method, interval: m.interval, keyword: m.keyword, user_agent: m.user_agent, tags: m.tags, request_headers: m.request_headers, request_body: m.request_body }));
+    const data = monitors.value.map(m => ({ name: m.name, url: m.url, method: m.method, interval: m.interval, keyword: m.keyword, user_agent: m.user_agent, tags: m.tags, request_headers: m.request_headers, request_body: m.request_body, expected_codes: m.expected_codes, channel_ids: m.channel_ids }));
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.style.display = 'none'; a.href = URL.createObjectURL(blob); a.download = `uptime-monitors-${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(a); a.click(); setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 200);
     addToast(`已导出 ${data.length} 个监控配置`, 'success');
 };
 
-// ── 键盘快捷键 ──
+const handleExportSla = () => {
+    if (monitors.value.length === 0) { addToast('暂无可导出的监控项', 'info'); return; }
+    exportSlaCsv(monitors.value);
+    addToast('SLA 月度报告导出完成', 'success');
+};
+
 onMounted(() => {
     if (isAuthenticated.value) { fetchMonitors(); fetchHealth(); setInterval(fetchMonitors, 30000); }
     document.addEventListener('keydown', (e) => {

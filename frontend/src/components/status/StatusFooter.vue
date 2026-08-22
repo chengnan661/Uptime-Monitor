@@ -1,9 +1,11 @@
 <template>
   <footer class="border-t border-black/[0.06] dark:border-white/[0.04] py-8 mt-8">
     <div class="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-500">
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <div class="w-1 h-1 rounded-full bg-emerald-500/40"></div>
         <p>&copy; {{ new Date().getFullYear() }} <a :href="footerUrl" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-400 transition-colors">{{ footerAuthor }}</a>. All Rights Reserved.</p>
+        <span v-if="siteSettings?.custom_footer" class="text-slate-400 dark:text-slate-600">·</span>
+        <span v-if="siteSettings?.custom_footer" class="text-slate-400 dark:text-slate-600">{{ siteSettings.custom_footer }}</span>
       </div>
       <div class="flex items-center gap-5 font-mono">
         <button @click="$emit('refresh')" :disabled="loading" class="flex items-center gap-1.5 text-slate-500 dark:text-slate-500 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40" title="刷新数据">
@@ -27,10 +29,10 @@
 defineProps({
     loading: Boolean,
     refreshing: Boolean,
+    siteSettings: Object,
 });
 defineEmits(['refresh']);
 
-// 从 Vite 环境变量读取，回退默认值
 const footerAuthor = import.meta.env.VITE_FOOTER_AUTHOR || 'Uptime Monitor';
 const footerUrl = import.meta.env.VITE_FOOTER_URL || '#';
 </script>

@@ -8,7 +8,13 @@
             <div class="w-10 h-10 bg-blue-500/15 rounded-xl flex items-center justify-center"><i class="fas fa-list-ul text-blue-400"></i></div>
             <div><h3 class="text-lg font-bold text-white">{{ monitor?.name }}</h3><p class="text-xs text-slate-500 mt-0.5 font-mono">检测日志流水</p></div>
           </div>
-          <button @click="$emit('close')" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><i class="fas fa-times text-lg"></i></button>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input type="checkbox" v-model="onlyFailures" class="w-4 h-4 rounded accent-red-500">
+              <span>仅看异常日志</span>
+            </label>
+            <button @click="$emit('close')" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><i class="fas fa-times text-lg"></i></button>
+          </div>
         </div>
 
         <!-- Uptime 统计 + P95/P99 -->
@@ -52,7 +58,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-700/50">
-              <tr v-for="log in logs" :key="log.id" class="hover:bg-white/5 transition">
+              <tr v-for="log in displayLogs" :key="log.id" class="hover:bg-white/5 transition">
                 <td class="px-6 py-3 text-xs text-slate-400 whitespace-nowrap">{{ formatDateFull(log.created_at) }}</td>
                 <td class="px-6 py-3 text-xs font-mono"><span :class="log.status_code >= 200 && log.status_code < 300 ? 'text-green-600' : 'text-red-600'">{{ log.status_code || '-' }}</span></td>
                 <td class="px-6 py-3 text-xs font-mono text-slate-400">{{ log.latency }}ms</td>
@@ -61,7 +67,7 @@
                   <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/15 text-green-400">Normal</span>
                 </td>
               </tr>
-              <tr v-if="logs.length === 0 && !logsLoading"><td colspan="4" class="px-6 py-12 text-center text-slate-500">暂无日志记录</td></tr>
+              <tr v-if="displayLogs.length === 0 && !logsLoading"><td colspan="4" class="px-6 py-12 text-center text-slate-500">暂无符合条件的日志记录</td></tr>
               <tr v-if="logsLoading"><td colspan="4" class="px-6 py-12 text-center"><i class="fas fa-circle-notch fa-spin text-green-500 text-xl"></i></td></tr>
             </tbody>
           </table>
@@ -77,7 +83,18 @@
 </template>
 
 <script setup>
+import { ref, computed } from 'vue';
 import { formatDateFull } from '../../utils/format';
-defineProps({ monitor: Object, logs: Array, logsLoading: Boolean, hasMoreLogs: Boolean, sparkline: Object, uptimeStats: Object, latencyPercentiles: Object });
+
+const props = defineProps({ monitor: Object, logs: Array, logsLoading: Boolean, hasMoreLogs: Boolean, sparkline: Object, uptimeStats: Object, latencyPercentiles: Object });
 defineEmits(['close', 'load-more']);
+
+const onlyFailures = ref(false);
+
+const displayLogs = computed(() => {
+  if (onlyFailures.value) {
+    return (props.logs || []).filter(l => l.is_fail === 1);
+  }
+  return props.logs || [];
+});
 </script>

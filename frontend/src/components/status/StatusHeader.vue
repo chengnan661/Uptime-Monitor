@@ -16,7 +16,7 @@
           <p class="text-[11px] text-slate-400 dark:text-slate-500 font-mono -mt-0.5 tracking-wider truncate max-w-[200px]">{{ siteSettings.site_description || 'STATUS PAGE' }}</p>
         </div>
       </div>
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 sm:gap-4">
         <!-- LIVE 指示 -->
         <div class="flex items-center gap-2 px-3 py-1.5 rounded-full glass text-xs">
           <div class="relative">
@@ -29,6 +29,10 @@
           </div>
           <span class="font-mono text-slate-500 dark:text-slate-400">{{ loading ? 'SYNCING' : 'LIVE' }}</span>
         </div>
+        <!-- 语言切换 -->
+        <button @click="toggleLocale" class="px-2.5 py-1 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-500/50 transition-colors cursor-pointer">
+          {{ locale === 'zh-CN' ? 'EN' : '中文' }}
+        </button>
         <!-- 主题切换 -->
         <button @click="$emit('toggle-theme')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-black/[0.06] dark:hover:bg-white/[0.06] transition-all duration-300 cursor-pointer">
           <svg v-if="isDark" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -44,10 +48,14 @@
 </template>
 
 <script setup>
+import { useI18n } from '../../composables/useI18n';
+
 defineProps({
     loading: Boolean,
     isDark: Boolean,
     siteSettings: Object,
 });
 defineEmits(['toggle-theme']);
+
+const { locale, toggleLocale } = useI18n();
 </script>

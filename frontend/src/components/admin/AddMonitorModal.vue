@@ -74,9 +74,15 @@
               <label class="block text-sm font-medium text-slate-300 mb-2">请求体</label>
               <textarea v-model="newMonitor.request_body" placeholder='{"key":"value"}' rows="3" class="input-field w-full border border-slate-700 rounded-xl px-4 py-3 text-sm bg-slate-800/80 text-white outline-none font-mono placeholder-slate-600 resize-none"></textarea>
             </div>
-            <div class="mt-4">
-              <label class="block text-sm font-medium text-slate-300 mb-2">错误率阈值告警 <span class="text-xs font-normal text-slate-500">0=关闭</span></label>
-              <input type="number" v-model="newMonitor.alert_error_rate" min="0" max="100" placeholder="0" class="input-field w-full border border-slate-700 rounded-xl px-4 py-3 text-sm bg-slate-800/80 text-white outline-none placeholder-slate-600">
+            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">期望状态码 <span class="text-xs font-normal text-slate-500">默认 200-299</span></label>
+                <input v-model="newMonitor.expected_codes" placeholder="例如: 200-299 或 200,301,302" class="input-field w-full border border-slate-700 rounded-xl px-4 py-3 text-sm bg-slate-800/80 text-white outline-none font-mono placeholder-slate-600">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">错误率阈值告警 <span class="text-xs font-normal text-slate-500">0=关闭</span></label>
+                <input type="number" v-model="newMonitor.alert_error_rate" min="0" max="100" placeholder="0" class="input-field w-full border border-slate-700 rounded-xl px-4 py-3 text-sm bg-slate-800/80 text-white outline-none placeholder-slate-600">
+              </div>
             </div>
           </div>
           <!-- 检测功能 -->

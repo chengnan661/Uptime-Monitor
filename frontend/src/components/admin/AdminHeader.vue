@@ -10,6 +10,9 @@
       </div>
       <div class="flex items-center gap-1.5">
         <span v-if="lastRefreshed" class="hidden md:inline text-[10px] font-mono text-slate-400 dark:text-slate-600 mr-1">{{ lastRefreshed }}</span>
+        <button @click="toggleLocale" class="px-2 py-1 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-green-500/50 transition-colors cursor-pointer mr-1">
+          {{ locale === 'zh-CN' ? 'EN' : '中文' }}
+        </button>
         <router-link to="/" class="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-green-500 hover:bg-green-500/10 transition-colors text-sm" title="状态页">
           <i class="fas fa-external-link-alt"></i>
         </router-link>
@@ -30,6 +33,10 @@
 </template>
 
 <script setup>
+import { useI18n } from '../../composables/useI18n';
+
 defineProps({ isDark: Boolean, loading: Boolean, lastRefreshed: String });
 defineEmits(['toggle-theme', 'refresh', 'logout']);
+
+const { locale, toggleLocale } = useI18n();
 </script>
