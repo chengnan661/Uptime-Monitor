@@ -1,14 +1,27 @@
 import { Hono } from 'hono';
-import { Bindings, Monitor, Log, MONITOR_COLUMNS } from '../types';
+import { Bindings, Monitor, Log } from '../types';
 import { performCheck, updateDomainCertInfo } from '../services/checker';
 
 const monitors = new Hono<{ Bindings: Bindings }>();
 
+let schemaChecked = false;
+async function ensureMonitorsSchema(db: D1Database) {
+  if (schemaChecked) return;
+  try {
+    await db.prepare("ALTER TABLE monitors ADD COLUMN expected_codes TEXT DEFAULT '200-299'").run();
+  } catch {}
+  try {
+    await db.prepare("ALTER TABLE monitors ADD COLUMN channel_ids TEXT").run();
+  } catch {}
+  schemaChecked = true;
+}
+
 // 1. 获取所有监控项（需鉴权在 index 中统一拦截，或者公共接口分离）
 monitors.get('/', async (c) => {
   try {
-    const { results } = await c.env.DB.prepare(`SELECT ${MONITOR_COLUMNS} FROM monitors ORDER BY sort_order ASC, created_at ASC`).all<Monitor>();
-    return c.json(results);
+    await ensureMonitorsSchema(c.env.DB);
+    const { results } = await c.env.DB.prepare(`SELECT * FROM monitors ORDER BY sort_order ASC, created_at ASC`).all<Monitor>();
+    return c.json(results || []);
   } catch (e: unknown) {
     return c.json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
   }
@@ -21,9 +34,8 @@ monitors.get('/public', async (c) => {
       'SELECT id, name, url, status, last_check, cert_expiry, domain_expiry, paused, tags FROM monitors ORDER BY sort_order ASC, created_at ASC'
     ).all<Pick<Monitor, 'id' | 'name' | 'url' | 'status' | 'last_check' | 'cert_expiry' | 'domain_expiry' | 'paused' | 'tags'>>();
     
-    // 设置 Cache-Control 允许边缘节点与客户端缓存 30s，降低 D1 Read 开销
     c.header('Cache-Control', 'public, max-age=30, s-maxage=30');
-    return c.json(results);
+    return c.json(results || []);
   } catch (e: unknown) {
     return c.json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
   }
@@ -163,6 +175,7 @@ monitors.put('/reorder', async (c) => {
 // 6. 新增监控项
 monitors.post('/', async (c) => {
   try {
+    await ensureMonitorsSchema(c.env.DB);
     const body = await c.req.json<Partial<Monitor>>();
     const { name, url, interval, keyword, user_agent, tags, request_headers, request_body, expected_codes, channel_ids } = body;
 
@@ -194,7 +207,7 @@ monitors.post('/', async (c) => {
         try {
           await c.env.DB.prepare('UPDATE monitors SET check_info_status = ? WHERE id = ?')
             .bind(new Date().toISOString(), newId).run();
-          const { results } = await c.env.DB.prepare(`SELECT ${MONITOR_COLUMNS} FROM monitors WHERE id = ?`)
+          const { results } = await c.env.DB.prepare(`SELECT * FROM monitors WHERE id = ?`)
             .bind(newId).all<Monitor>();
           if (results[0]) await updateDomainCertInfo(c.env, results[0]);
         } catch (err) { console.error('Initial cert check failed:', err); }
@@ -223,6 +236,7 @@ monitors.delete('/:id', async (c) => {
 monitors.patch('/:id/config', async (c) => {
   const id = c.req.param('id');
   try {
+    await ensureMonitorsSchema(c.env.DB);
     const body = await c.req.json<Record<string, unknown>>();
 
     const fields: string[] = [];
@@ -281,7 +295,8 @@ monitors.patch('/:id/config', async (c) => {
 monitors.post('/:id/check', async (c) => {
   const id = c.req.param('id');
   try {
-    const { results } = await c.env.DB.prepare(`SELECT ${MONITOR_COLUMNS} FROM monitors WHERE id = ?`).bind(id).all<Monitor>();
+    await ensureMonitorsSchema(c.env.DB);
+    const { results } = await c.env.DB.prepare(`SELECT * FROM monitors WHERE id = ?`).bind(id).all<Monitor>();
     if (!results[0]) return c.json({ error: 'Monitor not found' }, 404);
 
     await updateDomainCertInfo(c.env, results[0]);
@@ -323,7 +338,7 @@ monitors.get('/:id/logs', async (c) => {
     const { results } = await c.env.DB.prepare(
       'SELECT * FROM logs WHERE monitor_id = ? ORDER BY created_at DESC LIMIT ?'
     ).bind(id, limit).all<Log>();
-    return c.json(results);
+    return c.json(results || []);
   } catch (e: unknown) {
     return c.json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
   }

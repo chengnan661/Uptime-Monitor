@@ -4,12 +4,14 @@ import { renderAlertDetail, sendAlertToAllChannels } from './notifier';
 export async function checkSites(env: Bindings) {
   console.log('Starting scheduled check...');
   const now = Date.now();
-  const { results } = await env.DB.prepare(`
-    SELECT id, name, url, method, request_headers, request_body, interval, status,
-           retry_count, last_check, keyword, user_agent, check_info_status, paused,
-           alert_silence_uptime, alert_error_rate, last_alert_uptime
-    FROM monitors
-  `).all<Monitor>();
+  let results: Monitor[] = [];
+  try {
+    const res = await env.DB.prepare('SELECT * FROM monitors').all<Monitor>();
+    results = res.results || [];
+  } catch (e) {
+    console.error('Error fetching monitors in checkSites:', e);
+    return;
+  }
   const tasks = results.map(async (monitor) => {
     if (monitor.paused === 1) return;
     if (isTimeToCheck(monitor, now)) await performCheck(monitor, env);
