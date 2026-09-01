@@ -1,0 +1,173 @@
+# Uptime Monitor Configuration
+
+settings:
+  title: "Acofork System Status"
+  logo: "https://nanlin.de5.net/favicon.png" # Optional: URL to your logo image
+  callback_url: ""
+  callback_secret: ""
+  # If true, only send notifications when status changes to DOWN.
+  # DEGRADED or UP (recovery) events will NOT trigger notifications.
+  notification_on_down_only: true 
+  summary_exclusion: ["major_services"]
+  tags:
+    - id: "zeabur"
+      label: "Zeabur"
+      color: "#6300FF"
+    - id: "eopf"
+      label: "EdgeOne Page Function"
+      color: "#2563EB"
+    - id: "eopage"
+      label: "EdgeOne Page"
+      color: "#2563EB"
+    - id: "esa"
+      label: "ESA CDN"
+      color: "#EC2626"
+    - id: "esapage"
+      label: "ESA Page"
+      color: "#EC2626"
+    - id: "eo"
+      label: "EdgeOne CDN"
+      color: "#2563EB"
+    - id: "cf"
+      label: "Cloudflare CDN"
+      color: "#D97706"
+    - id: "cfw"
+      label: "Cloudflare Worker"
+      color: "#D97706"
+    - id: "cfp"
+      label: "Cloudflare Page"
+      color: "#D97706"
+    - id: "vercel"
+      label: "Vercel Page"
+      color: "#000000"
+    - id: "vf"
+      label: "Vercel Function"
+      color: "#000000"
+    - id: "self"
+      label: "Self-Hosted"
+      color: "#4B5563"
+
+incidents:
+#   - id: "maintenance-001"
+#     title: "楠霖网站服务监测页"
+#     type: "scheduled" # scheduled, routine, incident
+#     status: "scheduled" # upcoming, in_progress, completed
+#     affected_monitors: ["uptimekuma", "vw_nas"]
+#     start_time: "2026-01-10T02:00:00Z"
+#     end_time: "2026-01-10T04:00:00Z"
+#     updates:
+#       - timestamp: "2026-01-04T10:00:00Z"
+#         message: "Maintenance scheduled for next week."
+#         status: "scheduled"
+
+#   - id: "routine-backup"
+#     title: "Weekly Backup"
+#     type: "routine"
+#     status: "in_progress" # Will show as active during the time window if we had logic, but for now it's static config
+#     routine_schedule: "Every Sunday 03:00 UTC"
+#     affected_monitors: ["blog"]
+    
+   - id: "incident-001"
+     title: "监测页面正式上线！"
+     type: "incident"
+     status: "investigating" # investigating, identified, monitoring, resolved
+     affected_monitors: ["blog_eo"]
+     start_time: "2026-09-01T12:37:00Z"
+     updates:
+       - timestamp: "2026-09-01T13:26:00Z"
+         message: "监测页面正式上线！"
+         status: "monitoring"
+
+groups:
+  - id: "blog"
+    name: "楠霖博客 | 主网站"
+    monitors:
+      - id: "uptimekuma"
+        name: "UptimeKuma"
+        tags: [zeabur]
+        type: "http"
+        url: "https://nanlin.de5.net/"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
+
+      - id: "img"
+        name: "楠霖图床系统"
+        tags: [eopage]
+        type: "http"
+        url: "https://img.nanlin.de5.net/"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
+
+      - id: "front"
+        name: "楠霖导航页"
+        tags: [esapage]
+        type: "http"
+        url: "https://bb.nanlin.de5.net/"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
+
+      - id: "楠霖邮局"
+        name: "博客海外节点"
+        tags: [cfp]
+        type: "http"
+        url: "https://mail.nanlin.de5.net/"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
+
+      - id: "pinlun"
+        name: "博客评论系统"
+        tags: [eo,self]
+        type: "http"
+        url: "https://twikoo-netlify-nanlin.netlify.app/.netlify/functions/twikoo"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
+
+      - id: "img_webdav"
+        name: "图片托管Webdav"
+        tags: [eo,self]
+        type: "http"
+        url: "https://pan.lansod.cn/dav"
+        method: "HEAD"
+        timeout: 60000
+        expected_latency: 1000
+        grace_period: 3
+        display:
+          chart: true
+          public_link: true
+        validation:
+          status: 200
