@@ -1,18 +1,536 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="dark">
-
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Status — Uptime Monitor</title>
-    <meta name="description" content="实时监控服务运行状态与性能指标">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%2222c55e%22><path d=%22M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5%22/></svg>">
+    <title>System Status</title>
+    <link rel="icon" href="data:image/x-icon;base64,AAABAAEAAQEAAAEAIAAwAAAAFgAAACgAAAABAAAAAgAAAAEAIAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAA==">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <header class="mb-8 text-center flex flex-col items-center">
+            <img v-if="config.settings?.logo" :src="config.settings.logo" alt="Logo" class="h-16 w-16 mb-4 rounded-full shadow-lg">
+            <h1 class="text-3xl font-bold text-gray-800">{{ config.settings?.title || 'System Status' }}</h1>
+            <p class="text-gray-600 mt-2" v-if="lastUpdated">Last updated: {{ lastUpdated }}</p>
+        </header>
 
-<body class="min-h-screen text-slate-800 dark:text-slate-200 grid-bg">
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-    <!-- __CF_ANALYTICS_SCRIPT__ -->
+        <div v-if="loading" class="text-center text-gray-500">Loading status...</div>
+        <div v-else-if="error" class="text-center text-red-500">{{ error }}</div>
+
+        <div v-else class="space-y-8">
+            <!-- Overall Status -->
+            <div class="bg-white rounded-lg shadow-md p-6 text-center">
+                <div v-if="overallStatus === 'UP'" class="flex flex-col items-center">
+                    <div class="bg-green-100 p-4 rounded-full mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">All Systems Operational</h2>
+                </div>
+                <div v-else-if="overallStatus === 'DEGRADED'" class="flex flex-col items-center">
+                    <div class="bg-yellow-100 p-4 rounded-full mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">Partial System Outage</h2>
+                </div>
+                <div v-else class="flex flex-col items-center">
+                    <div class="bg-red-100 p-4 rounded-full mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800">Major System Outage</h2>
+                </div>
+            </div>
+
+            <!-- Incidents Section -->
+            <div v-if="activeIncidents.length > 0" class="space-y-4">
+                <div v-for="incident in activeIncidents" :key="incident.id" class="rounded-lg shadow-md overflow-hidden border-l-4"
+                    :class="getIncidentColor(incident.type, incident.status)">
+                    <div class="bg-white px-6 py-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                                    <span class="uppercase text-xs px-2 py-1 rounded mr-2 text-white" :class="getIncidentLabelColor(incident.type)">
+                                        {{ getIncidentTypeLabel(incident.type) }}
+                                    </span>
+                                    {{ incident.title }}
+                                </h3>
+                                <p class="text-sm text-gray-600 mt-1" v-if="incident.start_time">
+                                    Started: {{ new Date(incident.start_time).toLocaleString() }}
+                                    <span v-if="incident.end_time"> - Ends: {{ new Date(incident.end_time).toLocaleString() }}</span>
+                                </p>
+                                <p class="text-sm text-gray-600 mt-1" v-if="incident.routine_schedule">
+                                    Schedule: {{ incident.routine_schedule }}
+                                </p>
+                                <p class="text-sm text-gray-500 mt-2" v-if="incident.affected_monitors">
+                                    Affected: {{ getMonitorNames(incident.affected_monitors).join(', ') }}
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-bold" :class="getIncidentStatusColor(incident.status)">{{ incident.status.toUpperCase().replace('_', ' ') }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Updates Timeline -->
+                        <div v-if="incident.updates && incident.updates.length > 0" class="mt-4 border-t border-gray-100 pt-4">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">Updates</h4>
+                            <div class="space-y-3">
+                                <div v-for="(update, idx) in incident.updates" :key="idx" class="relative pl-4 border-l-2 border-gray-200">
+                                    <div class="text-xs text-gray-500">{{ new Date(update.timestamp).toLocaleString() }}</div>
+                                    <div class="text-sm text-gray-800">{{ update.message }}</div>
+                                    <div v-if="update.status" class="mt-2">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border" 
+                                              :class="[getStatusDetails(update.status).bg, getStatusDetails(update.status).color, 'border-' + getStatusDetails(update.status).color.split('-')[1] + '-200']">
+                                            <span class="mr-1.5 w-3 h-3" v-html="getStatusDetails(update.status).icon"></span>
+                                            {{ getStatusDetails(update.status).label }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monitor Groups -->
+            <div v-for="group in statusData" :key="group.id" class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-700">{{ group.name }}</h2>
+                </div>
+                <div class="divide-y divide-gray-100">
+                    <div v-for="monitor in group.monitors" :key="monitor.id" class="p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-2.5 h-2.5 rounded-full" :class="getStatusColor(monitor.state.status)"></div>
+                                <div class="font-medium text-gray-700">
+                                    {{ monitor.name }}
+                                    <span v-if="monitor.tags" class="ml-2 inline-flex space-x-1">
+                                        <span v-for="tag in monitor.tags" :key="typeof tag === 'string' ? tag : tag.name"
+                                            class="px-2 py-0.5 rounded text-[0.7em] text-white font-bold"
+                                            :style="getTagStyle(tag)">
+                                            {{ getTagLabel(tag) }}
+                                        </span>
+                                    </span>
+                                </div>
+                                <a v-if="monitor.display?.public_link" :href="monitor.url" target="_blank" class="text-gray-400 hover:text-gray-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                </a>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-bold" :class="getStatusTextColor(monitor.state.status)">
+                                    {{ monitor.state.status }}
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    {{ monitor.state.last_latency }}ms
+                                </div>
+                                <div v-if="monitor.state.status === 'DOWN' && monitor.state.last_error" class="text-xs text-red-500 mt-1 max-w-[150px] truncate" :title="monitor.state.last_error">
+                                    {{ monitor.state.last_error }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Bar -->
+                        <div class="flex space-x-0.5 mt-2 h-2.5 w-full rounded-sm overflow-hidden bg-gray-100">
+                             <div v-for="(check, index) in getRecentChecks(monitor)" :key="index"
+                                  class="flex-1 rounded-[1px]"
+                                  :class="getCheckColor(check)"
+                                  :title="check ? (new Date(check.timestamp).toLocaleString() + ' - ' + check.status + ' (' + check.latency + 'ms)') : 'No Data'">
+                             </div>
+                        </div>
+
+                        <!-- Chart Section -->
+                        <div v-if="monitor.display.chart && monitor.display.history !== false" class="mt-4">
+                            <button @click="toggleChart(monitor)" class="text-xs text-blue-500 hover:underline focus:outline-none">
+                                {{ monitor.showChart ? 'Hide Latency Chart' : 'Show Latency Chart' }}
+                            </button>
+                            <div v-if="monitor.showChart" class="mt-2 h-40">
+                                <canvas :id="'chart-' + monitor.id"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-8 text-center text-gray-500 text-sm pb-4">
+            <p>
+                Powered by 
+                <a href="https://github.com/afoim/CF-Worker-Uptime" target="_blank" class="text-blue-500 hover:underline">
+                    CF-Worker-Uptime
+                </a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // CONFIGURATION: API_URL can be empty if served from the same worker
+        const API_URL = ''; 
+
+        const { createApp, ref, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const config = ref({});
+                const statusData = ref([]);
+                const activeIncidents = ref([]);
+                const overallStatus = ref('UP');
+                const loading = ref(true);
+                const error = ref(null);
+                const lastUpdated = ref('');
+                const charts = {}; // Store chart instances
+
+                const getIncidentColor = (type, status) => {
+                    if (status === 'resolved' || status === 'completed') return 'border-green-500';
+                    switch (type) {
+                        case 'incident': return 'border-red-500';
+                        case 'scheduled': return 'border-blue-500';
+                        case 'routine': return 'border-purple-500';
+                        default: return 'border-gray-500';
+                    }
+                };
+
+                const getIncidentLabelColor = (type) => {
+                    switch (type) {
+                        case 'incident': return 'bg-red-500';
+                        case 'scheduled': return 'bg-blue-500';
+                        case 'routine': return 'bg-purple-500';
+                        default: return 'bg-gray-500';
+                    }
+                };
+
+                const getIncidentTypeLabel = (type) => {
+                    switch (type) {
+                        case 'incident': return 'Incident';
+                        case 'scheduled': return 'Maintenance';
+                        case 'routine': return 'Routine';
+                        default: return type;
+                    }
+                };
+
+                const getIncidentStatusColor = (status) => {
+                    switch (status) {
+                        case 'resolved':
+                        case 'completed': return 'text-green-600';
+                        case 'investigating':
+                        case 'in_progress': return 'text-orange-600';
+                        case 'monitoring': return 'text-blue-600';
+                        default: return 'text-gray-600';
+                    }
+                };
+
+                const getStatusDetails = (status) => {
+                    switch (status) {
+                        case 'investigating':
+                            return {
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>',
+                                color: 'text-red-700',
+                                bg: 'bg-red-100',
+                                label: 'Investigating'
+                            };
+                        case 'identified':
+                            return {
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
+                                color: 'text-orange-700',
+                                bg: 'bg-orange-100',
+                                label: 'Identified'
+                            };
+                        case 'monitoring':
+                            return {
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>',
+                                color: 'text-blue-700',
+                                bg: 'bg-blue-100',
+                                label: 'Monitoring'
+                            };
+                        case 'resolved':
+                        case 'completed':
+                            return {
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>',
+                                color: 'text-green-700',
+                                bg: 'bg-green-100',
+                                label: 'Resolved'
+                            };
+                        default:
+                            return {
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
+                                color: 'text-gray-700',
+                                bg: 'bg-gray-100',
+                                label: status
+                            };
+                    }
+                };
+
+                const getMonitorNames = (ids) => {
+                    if (!ids) return [];
+                    const names = [];
+                    // Use config.groups if available (loaded first), otherwise statusData
+                    const groups = config.value?.groups || statusData.value;
+                    
+                    if (groups) {
+                        groups.forEach(group => {
+                            if (group.monitors) {
+                                group.monitors.forEach(m => {
+                                    if (ids.includes(m.id)) names.push(m.name);
+                                });
+                            }
+                        });
+                    }
+                    return names.length > 0 ? names : ids;
+                };
+
+                const getStatusColor = (status) => {
+                    switch (status) {
+                        case 'UP': return 'bg-green-500';
+                        case 'DEGRADED': return 'bg-yellow-500';
+                        case 'DOWN': return 'bg-red-500';
+                        default: return 'bg-gray-300';
+                    }
+                };
+
+                const getStatusTextColor = (status) => {
+                    switch (status) {
+                        case 'UP': return 'text-green-600';
+                        case 'DEGRADED': return 'text-yellow-600';
+                        case 'DOWN': return 'text-red-600';
+                        default: return 'text-gray-500';
+                    }
+                };
+
+                const getTagStyle = (tagInput) => {
+                    // 1. If it's an object with explicit color, use it
+                    if (typeof tagInput === 'object' && tagInput.color) {
+                        return { backgroundColor: tagInput.color };
+                    }
+                    
+                    // 2. If it's a string, check predefined tags
+                    const tagName = typeof tagInput === 'string' ? tagInput : tagInput.name;
+                    
+                    // Look up in config.settings.tags
+                    if (config.value.settings?.tags) {
+                        const predefined = config.value.settings.tags.find(t => t.id === tagName);
+                        if (predefined && predefined.color) {
+                            return { backgroundColor: predefined.color };
+                        }
+                    }
+
+                    // 3. Fallback
+                    return { backgroundColor: '#6b7280' };
+                };
+
+                const getTagLabel = (tagInput) => {
+                     const tagName = typeof tagInput === 'string' ? tagInput : tagInput.name;
+                     // Look up label in predefined tags
+                     if (config.value.settings?.tags) {
+                        const predefined = config.value.settings.tags.find(t => t.id === tagName);
+                        if (predefined && predefined.label) {
+                            return predefined.label;
+                        }
+                    }
+                    return tagName;
+                };
+
+                const getRecentChecks = (monitor) => {
+                    const checks = monitor.recent_checks || [];
+                    const limit = 30;
+                    // Ensure we have exactly 'limit' items for consistent bar width
+                    // If we have less, pad with null (gray)
+                    const result = [...checks];
+                    while (result.length < limit) {
+                        result.unshift(null); // Add empty slots at the beginning (older)
+                    }
+                    return result; // result is sorted by timestamp asc
+                };
+
+                const getCheckColor = (check) => {
+                    if (!check) return 'bg-gray-200'; // No data
+                    switch (check.status) {
+                        case 'UP': return 'bg-green-400 hover:bg-green-500';
+                        case 'DEGRADED': return 'bg-yellow-400 hover:bg-yellow-500';
+                        case 'DOWN': return 'bg-red-500 hover:bg-red-600';
+                        default: return 'bg-gray-200';
+                    }
+                };
+
+                const fetchData = async () => {
+                    try {
+                        loading.value = true;
+                        const baseUrl = window.location.protocol === 'file:' ? API_URL : (API_URL || '');
+                        
+                        const [configRes, statusRes] = await Promise.all([
+                            fetch(`${baseUrl}/api/config`),
+                            fetch(`${baseUrl}/api/status`)
+                        ]);
+
+                        if (!configRes.ok) {
+                            throw new Error(`Config API Error: ${configRes.status} ${configRes.statusText}`);
+                        }
+                        if (!statusRes.ok) {
+                            const errText = await statusRes.text();
+                            throw new Error(`Status API Error: ${statusRes.status} ${statusRes.statusText} - ${errText}`);
+                        }
+
+                        config.value = await configRes.json();
+                        const rawStatus = await statusRes.json();
+                        
+                        // Update statusData FIRST
+                        // Merge with existing data to preserve chart state
+                        statusData.value = rawStatus.map(group => ({
+                            ...group,
+                            monitors: group.monitors.map(m => {
+                                const existingGroup = statusData.value.find(g => g.id === group.id);
+                                const existingMonitor = existingGroup?.monitors.find(em => em.id === m.id);
+                                return {
+                                    ...m,
+                                    showChart: existingMonitor ? existingMonitor.showChart : false
+                                };
+                            })
+                        }));
+                        
+                        // Process Incidents
+                        // Filter active incidents (or upcoming scheduled ones)
+                        // For simplicity, we show everything configured in config.incidents for now, 
+                        // but you could filter by date here.
+                        if (config.value.incidents) {
+                            activeIncidents.value = config.value.incidents;
+                        }
+
+                        // Calculate Overall Status
+                        let downCount = 0;
+                        let degradedCount = 0;
+                        let totalCount = 0;
+                        
+                        const exclusionList = config.value.settings?.summary_exclusion || [];
+
+                        statusData.value.forEach(group => {
+                            // Skip excluded groups
+                            if (exclusionList.includes(group.id)) return;
+
+                            group.monitors.forEach(m => {
+                                totalCount++;
+                                if (m.state.status === 'DOWN') downCount++;
+                                else if (m.state.status === 'DEGRADED') degradedCount++;
+                            });
+                        });
+
+                        if (downCount > 0) overallStatus.value = 'DOWN';
+                        else if (degradedCount > 0) overallStatus.value = 'DEGRADED';
+                        else overallStatus.value = 'UP';
+
+                        // Update document title
+                        if (config.value.settings?.title) {
+                            document.title = config.value.settings.title;
+                        }
+
+                        // Update favicon
+                        if (config.value.settings?.logo) {
+                            // Remove existing favicon links
+                            const existingLinks = document.querySelectorAll("link[rel*='icon']");
+                            existingLinks.forEach(l => l.remove());
+
+                            // Create new favicon link
+                            const link = document.createElement('link');
+                            link.type = 'image/x-icon';
+                            link.rel = 'shortcut icon';
+                            link.href = config.value.settings.logo;
+                            document.getElementsByTagName('head')[0].appendChild(link);
+                        }
+                        
+                        lastUpdated.value = new Date().toLocaleString();
+                    } catch (e) {
+                        error.value = e.message + '. Please check API_URL configuration.';
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const toggleChart = async (monitor) => {
+                    monitor.showChart = !monitor.showChart;
+                    if (monitor.showChart) {
+                        await nextTick(); // Wait for canvas to render
+                        loadChart(monitor);
+                    } else {
+                        // Destroy chart instance
+                        if (charts[monitor.id]) {
+                            charts[monitor.id].destroy();
+                            delete charts[monitor.id];
+                        }
+                    }
+                };
+
+                const loadChart = async (monitor) => {
+                    const baseUrl = window.location.protocol === 'file:' ? API_URL : (API_URL || '');
+                    try {
+                        const res = await fetch(`${baseUrl}/api/history/${monitor.id}`);
+                        const history = await res.json();
+                        
+                        const ctx = document.getElementById('chart-' + monitor.id);
+                        if (!ctx) return;
+
+                        if (charts[monitor.id]) charts[monitor.id].destroy();
+
+                        charts[monitor.id] = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: history.map(h => new Date(h.timestamp).toLocaleTimeString()),
+                                datasets: [{
+                                    label: 'Latency (ms)',
+                                    data: history.map(h => h.latency),
+                                    borderColor: 'rgb(75, 192, 192)',
+                                    tension: 0.1,
+                                    fill: false
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: { beginAtZero: true }
+                                }
+                            }
+                        });
+
+                    } catch (e) {
+                        console.error('Failed to load history', e);
+                    }
+                };
+
+                onMounted(() => {
+                    fetchData();
+                    setInterval(fetchData, 60000);
+                });
+
+                return {
+                    config,
+                    statusData,
+                    activeIncidents,
+                    overallStatus,
+                    loading,
+                    error,
+                    lastUpdated,
+                    getStatusColor,
+                    getStatusTextColor,
+                    toggleChart,
+                    getTagStyle,
+                    getTagLabel,
+                    getRecentChecks,
+                    getCheckColor,
+                    getIncidentColor,
+                    getIncidentLabelColor,
+                    getIncidentTypeLabel,
+                    getIncidentStatusColor,
+                    getStatusDetails,
+                    getMonitorNames
+                };
+            }
+        }).mount('#app');
+    </script>
 </body>
-
 </html>

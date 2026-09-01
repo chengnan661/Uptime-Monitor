@@ -1,392 +1,222 @@
-# Uptime Monitor
+# CF-Worker-Uptime ☁️
 
-[English](README.en.md) | 中文
+[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20to-Cloudflare%20Workers-orange?style=flat-square&logo=cloudflare)](https://workers.cloudflare.com/)
 
-Uptime Monitor 是一个基于 Cloudflare Workers、Pages 和 D1 的轻量级网站监控系统。它支持多站点可用性监控、SSL 证书和域名到期检测、多渠道告警、公开状态页以及管理后台，适合个人站点、小团队和轻量级服务监控。
+一个运行在 Cloudflare Workers 和 D1 数据库上的高性能、无服务器（Serverless）状态监控工具。
+无需购买服务器，利用 Cloudflare 强大的全球边缘网络监控您的网站和 API。
 
-项目依赖 Cloudflare 免费额度即可运行，不需要自建服务器。前端已移除 Google Fonts、运行时图标 CDN 等海外依赖，默认使用本地打包字体和图标，更适合国内用户访问。
+## ✨ 特性 (Features)
 
-## 适合谁
+- **完全无服务器**: 部署在 Cloudflare Workers 上，依托 Cron Triggers 定时触发，成本极低（个人使用通常免费）。
+- **多协议支持**: 支持 HTTP(S) (GET/HEAD) 和 TCP 端口监控。
+- **内置状态页**: 自带美观的单页应用 (SPA) 状态页，展示实时可用性和历史趋势。
+- **通知系统**:
+  - **邮件**: 通过 [Resend](https://resend.com) 发送告警邮件。
+  - **Webhook**: 支持自定义回调 URL，可对接飞书、钉钉、Telegram 等。
+- **高级配置**:
+  - **防抖动 (Grace Period)**: 连续失败多次才报警，避免网络波动导致的误报。
+  - **自定义验证**: 支持自定义 HTTP 状态码验证（如 200, 201, 204）。
+  - **分组与标签**: 灵活对监控项进行分组和打标签（支持自定义颜色）。
+- **故障公告**: 支持在配置文件中手动添加维护公告或故障说明。
 
-- 个人站长：监控博客、文档站、API、图床、反代服务等。
-- 独立开发者：给自己的产品准备一个公开状态页和告警后台。
-- 小团队：用低成本方式监控网站、证书、域名和关键 HTTP 服务。
-- Cloudflare 用户：希望直接跑在 Workers、Pages 和 D1 上，不额外维护服务器。
+---
 
-不适合需要复杂探针网络、企业级 SLO 报表、值班排班和多租户权限的大型团队。
+## 🚀 快速开始 (Quick Start)
 
-## 功能特性
+小白也能轻松上手的部署指南。
 
-- 多站点 HTTP/HTTPS 监控，支持 GET/POST、自定义 Header、请求 Body 和关键词校验。
-- SSL 证书与域名到期检测，支持独立开关和提前提醒阈值。
-- 支持企业微信、飞书、钉钉、自定义 Webhook、Telegram 和 Email 告警。
-- 告警模板可配置，恢复通知和异常通知分离。
-- 公开状态页支持标签分组、事件公告、计划维护和自定义 Logo。
-- 管理后台支持批量操作、拖拽排序、配置导入导出和健康检查。
-- 管理接口使用登录会话令牌，避免前端长期保存明文口令。
-- Worker 和 Pages 代理支持 `ALLOWED_ORIGIN`，可收紧跨域来源。
-- GitHub Actions 自动部署 Worker 和 Pages。
+### 1. 准备工作
 
-## 快速了解
+- 一个 [Cloudflare](https://www.cloudflare.com/) 账号。
+- 本地安装了 [Node.js](https://nodejs.org/) 环境。
+- 安装并登录 Wrangler CLI:
+  ```bash
+  npm install -g wrangler
+  wrangler login
+  ```
 
-| 问题 | 回答 |
-|---|---|
-| 是否需要服务器 | 不需要，部署到 Cloudflare Workers、Pages 和 D1 |
-| 是否需要数据库 | 需要 Cloudflare D1 |
-| 是否支持公开状态页 | 支持 |
-| 是否支持后台管理 | 支持，路径为 `/admin` |
-| 是否支持告警 | 支持企业微信、飞书、钉钉、Webhook、Telegram、Email |
-| 是否适合国内用户 | 前端资源本地打包，通知渠道优先推荐企业微信、飞书、钉钉 |
-| 在线 Demo | [https://uptime.nianshu2022.cn](https://uptime.nianshu2022.cn) |
-
-## 在线演示
-
-- 状态页：[https://uptime.nianshu2022.cn](https://uptime.nianshu2022.cn)
-- 管理后台：[https://uptime.nianshu2022.cn/admin](https://uptime.nianshu2022.cn/admin)
-- 演示密码：`Qwer1234`
-
-演示密码仅用于公开 Demo，请不要作为自己的生产环境管理口令。
-
-## 界面预览
-
-<div align="center">
-  <img src="img/Uptime-Monitor-pc.png" alt="Status page" width="100%">
-  <br>
-  <em>公开状态页</em>
-</div>
-
-<br>
-
-<div align="center">
-  <img src="img/Uptime-Monitor-admin.png" alt="Admin dashboard" width="100%">
-  <br>
-  <em>管理后台</em>
-</div>
-
-## 技术栈
-
-| 模块 | 技术 |
-|---|---|
-| 后端 | Cloudflare Workers + Hono |
-| 数据库 | Cloudflare D1 |
-| 前端 | Vue 3 + Vite + Tailwind CSS |
-| 边缘代理 | Cloudflare Pages Functions |
-| 部署 | Wrangler + GitHub Actions |
-
-## 前置要求
-
-- Cloudflare 账号
-- Node.js 22 或更高版本
-- npm
-- Wrangler CLI
+### 2. 获取代码
 
 ```bash
-npm install -g wrangler
-wrangler login
+git clone https://github.com/your-username/CF-Worker-Uptime.git
+cd CF-Worker-Uptime
+npm install
 ```
 
-克隆项目：
+### 3. 创建数据库
 
-```bash
-git clone https://github.com/nianshu2022/Uptime-Monitor.git
-cd Uptime-Monitor
-```
-
-## 创建 D1 数据库
-
-新建数据库：
+我们需要一个 D1 数据库来存储监控历史。运行以下命令：
 
 ```bash
 npx wrangler d1 create uptime-db
 ```
 
-命令输出中会包含 `database_id`，后续部署需要使用：
+**⚠️ 重要步骤**:
+执行命令后，控制台会输出一段 JSON 信息。找到 `database_id`，复制它！
 
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "uptime-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+打开项目根目录下的 `wrangler.jsonc` 文件，找到 `d1_databases` 部分，替换 `database_id`:
+
+```jsonc
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "uptime-db",
+      "database_id": "你的-DATABASE-ID-粘贴在这里" // <--- 修改这里
+    }
+  ],
 ```
 
-初始化表结构：
+### 4. 初始化数据表
+
+将数据表结构写入数据库：
 
 ```bash
-npx wrangler d1 execute uptime-db --remote --file=worker/schema.sql
+npx wrangler d1 execute uptime-db --file=./schema.sql --remote
 ```
 
-如果数据库之前已经创建过，可以在 Cloudflare Dashboard 的 D1 数据库详情页复制 Database ID，也可以执行：
+### 5. 修改配置 (Config)
+
+`config.yaml` 是本项目的核心配置文件。你可以直接修改它来添加你要监控的网站。
 
 ```bash
-npx wrangler d1 list
+# 编辑配置文件
+code config.yaml
 ```
 
-已有数据库升级时，请重新执行 `worker/schema.sql`。其中 `CREATE INDEX IF NOT EXISTS` 会补齐新增索引，不会重复创建。
+*(详细配置说明请见下文 [⚙️ 配置详解](#%EF%B8%8F-配置详解-configuration))*
 
-## 部署前检查清单
-
-上线前请确认下面 4 项都已完成：
-
-- 远程 D1 已执行 `worker/schema.sql`。
-- Worker 已绑定 D1，且绑定名是 `DB`。
-- Worker 已配置 `ADMIN_API_KEY`。
-- Pages 已配置 `WORKER_URL`，并在保存后重新部署前端。
-
-如果少了最后一步，登录接口会返回：
-
-```json
-{"error":"WORKER_URL environment variable is not set"}
-```
-
-如果少了 D1 初始化，公开接口或登录后的管理接口可能返回：
-
-```json
-{"error":"D1_ERROR: no such table: monitors: SQLITE_ERROR"}
-```
-
-## 手动部署
-
-### 1. 配置并部署 Worker
-
-```bash
-cd worker
-npm install
-cp wrangler.example.toml wrangler.toml
-```
-
-编辑 `worker/wrangler.toml`：
-
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "uptime-db"
-database_id = "你的 D1_DATABASE_ID"
-
-[vars]
-ADMIN_API_KEY = "你的管理后台登录口令"
-ALLOWED_ORIGIN = "https://你的-pages域名.pages.dev"
-SESSION_TTL_HOURS = "12"
-```
-
-注意：`binding` 必须保持为 `DB`。
-
-部署 Worker：
+### 6. 部署上线 (Deploy)
 
 ```bash
 npx wrangler deploy
 ```
 
-部署完成后复制 Worker 地址，例如：
+部署完成后，你会获得一个 `https://uptime-monitor.你的子域.workers.dev` 的链接，访问它即可看到你的状态页！
 
-```text
-https://uptime-worker.example.workers.dev
+---
+
+## ⚙️ 配置详解 (Configuration)
+
+`config.yaml` 拥有丰富的功能，以下是一些**特色字段**的详细介绍：
+
+### 全局设置 (`settings`)
+
+| 字段 | 说明 | 推荐值 |
+|------|------|--------|
+| `title` | 状态页的标题 | "我的服务监控" |
+| `notification_on_down_only` | **🌟 特色**: 如果设为 `true`，则只在服务**挂掉 (DOWN)** 时发送通知，恢复时不再发送。适合不想被恢复通知打扰的用户。 | `true` |
+| `summary_exclusion` | **🌟 特色**: 在这里填入分组 ID，该分组将不会计入页面顶部的"系统整体状态"。适合用于监控一些非核心服务（如测试环境）。 | `["test_group"]` |
+| `callback_url` | 通用 Webhook 地址，状态变更时会向此 URL 发送 POST 请求。 | `""` |
+
+### 监控项配置 (`monitors`)
+
+每个监控项都有很多可调参数：
+
+```yaml
+    monitors:
+      - id: "blog_main"
+        name: "个人博客"
+        type: "http"       # 支持 'http' 或 'tcp'
+        url: "https://blog.example.com"
+        method: "HEAD"     # 使用 HEAD 请求可以减少流量消耗
+        timeout: 5000      # 超时时间 (毫秒)
+        expected_latency: 500 # 期望延迟，虽然目前不影响状态，但用于图表参考
+        
+        # 🌟 特色: 防抖动机制
+        # 只有连续失败 3 次，才会判定为 DOWN 并发送通知
+        grace_period: 3    
+        
+        # 🌟 特色: 自定义验证
+        validation:
+          status: [200, 301, 302] # 允许的状态码列表
+          
+        display:
+          chart: true      # 是否显示延迟图表
+          public_link: true # 点击名称是否跳转
 ```
 
-### 2. 构建并部署前端
+### 故障公告 (`incidents`)
+
+你可以在 `config.yaml` 中手动发布故障信息或维护计划，它们会置顶显示在状态页。
+
+```yaml
+incidents:
+  - id: "incident-001"
+    title: "数据库维护"
+    type: "maintenance" # maintenance (维护) 或 incident (故障)
+    status: "in_progress" # scheduled, in_progress, completed, resolved
+    start_time: "2024-01-01T10:00:00Z"
+    affected_monitors: ["blog_main"] # 关联受影响的监控项 ID
+    updates:
+      - timestamp: "2024-01-01T10:00:00Z"
+        message: "正在进行数据库迁移..."
+        status: "in_progress"
+```
+
+---
+
+## 🔔 通知设置 (Notifications)
+
+### 1. 邮件通知 (推荐)
+
+本项目集成了 [Resend](https://resend.com) 邮件服务（免费额度足够个人使用）。
+
+1. 注册 Resend 并获取 API Key。
+2. 在 Cloudflare Workers 设置 Secret 环境变量（为了安全，不要写在代码里）：
 
 ```bash
-cd ../frontend
-npm install
-cp .env.example .env
-npm run build
-npx wrangler pages deploy dist --project-name=uptime-monitor
+# 设置 API Key
+npx wrangler secret put RESEND_KEY
+# (输入你的 Resend API Key)
+
+# 设置发件人 (必须在 Resend 验证过域名)
+npx wrangler secret put RESEND_SEND
+# (输入如: alert@yourdomain.com)
+
+# 设置收件人
+npx wrangler secret put RESEND_RECEIVE
+# (输入你的邮箱)
 ```
 
-### 3. 配置 Pages 环境变量
+### 2. Webhook
 
-进入 Cloudflare Dashboard：
+在 `config.yaml` 中配置 `callback_url`。当状态发生变化时，Worker 会向该 URL 发送如下 JSON：
 
-`Workers & Pages` -> `uptime-monitor` -> `Settings` -> `Environment variables`
-
-添加：
-
-| 变量 | 说明 |
-|---|---|
-| `WORKER_URL` | Worker 地址，例如 `https://uptime-worker.example.workers.dev` |
-| `ALLOWED_ORIGIN` | Pages 地址，例如 `https://uptime-monitor.pages.dev` |
-
-保存后重新部署前端：
-
-```bash
-npx wrangler pages deploy dist --project-name=uptime-monitor
+```json
+{
+  "monitor_id": "google",
+  "status": "DOWN",
+  "time": 1704364800000,
+  "incident_id": "..."
+}
 ```
 
-验证代理是否生效：
+你可以使用 Serverless 函数或自动化工具（如 n8n, IFTTT）接收此 Webhook 并推送到任意平台。
 
-```bash
-curl https://你的-pages域名.pages.dev/api/monitors/public
+---
+
+## 🛠️ 开发与调试
+
+- **本地运行**:
+  ```bash
+  npx wrangler dev
+  ```
+  这会在本地启动服务，方便调试 UI 和逻辑。
+
+- **查看实时日志**:
+  ```bash
+  npx wrangler tail
+  ```
+  如果部署后发现不工作，可以使用此命令查看线上报错。
+
+## 📅 定时任务说明
+
+Cloudflare Workers 的 Cron Triggers 默认配置在 `wrangler.jsonc` 中：
+
+```jsonc
+"triggers": {
+  "crons": ["* * * * *"] // 默认为每分钟执行一次
+}
 ```
 
-正常情况下会返回 `[]` 或监控列表。如果返回 `WORKER_URL environment variable is not set`，说明 Pages 环境变量未配置或配置后没有重新部署。
-
-## GitHub Actions 自动部署
-
-Fork 本仓库后，在 GitHub 仓库的 `Settings` -> `Secrets and variables` -> `Actions` 中配置以下内容。
-
-### Secrets
-
-| 名称 | 必填 | 说明 |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | 是 | Cloudflare API Token |
-| `CLOUDFLARE_ACCOUNT_ID` | 是 | Cloudflare Account ID |
-| `D1_DATABASE_ID` | 是 | D1 数据库 ID |
-| `ADMIN_API_KEY` | 是 | 管理后台登录口令 |
-| `VITE_CF_ANALYTICS_TOKEN` | 否 | Cloudflare Web Analytics Token |
-
-Cloudflare API Token 至少需要这些权限：
-
-| 权限 | 级别 |
-|---|---|
-| Account / Workers Scripts | Edit |
-| Account / Cloudflare Pages | Edit |
-| Account / D1 | Edit |
-| Account / Account Settings | Read |
-
-### Variables
-
-| 名称 | 必填 | 说明 |
-|---|---|---|
-| `ALLOWED_ORIGIN` | 推荐 | Pages 地址，用于限制跨域来源 |
-| `SESSION_TTL_HOURS` | 否 | 登录会话有效期，默认 12 小时 |
-| `VITE_FOOTER_AUTHOR` | 否 | 页脚作者名 |
-| `VITE_FOOTER_URL` | 否 | 页脚作者链接 |
-
-配置完成后，推送到 `main` 分支或在 Actions 页面手动运行 `Deploy Uptime Monitor` 工作流。
-
-首次部署完成后，还必须在 Cloudflare Pages 项目中添加 `WORKER_URL` 环境变量，然后重新部署一次前端。GitHub Secrets 里的 `D1_DATABASE_ID` 只用于 Worker 绑定，不会自动给 Pages 配置后端地址。
-
-操作路径：
-
-`Cloudflare Dashboard` -> `Workers & Pages` -> `uptime-monitor` -> `Settings` -> `Environment variables`
-
-添加：
-
-| 变量 | 值 |
-|---|---|
-| `WORKER_URL` | Worker 地址，例如 `https://uptime-worker.example.workers.dev` |
-| `ALLOWED_ORIGIN` | Pages 地址，例如 `https://uptime-monitor.pages.dev` |
-
-保存后回到 GitHub Actions 重新运行一次部署，或本地执行：
-
-```bash
-cd frontend
-npm run build
-npx wrangler pages deploy dist --project-name=uptime-monitor
-```
-
-## 本地开发
-
-启动 Worker：
-
-```bash
-cd worker
-npm install
-npm run dev
-```
-
-启动前端：
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-访问：
-
-- 状态页：`http://localhost:5173/`
-- 管理后台：`http://localhost:5173/admin`
-- Worker：`http://127.0.0.1:8787`
-
-## 国内访问说明
-
-`workers.dev` 域名在中国大陆可能无法直接访问。推荐将前端部署到 Cloudflare Pages，并通过 Pages 内置代理把 `/api/*` 请求转发到 Worker。
-
-如需更稳定访问，可以绑定自定义域名：
-
-- Worker：`Workers & Pages` -> Worker -> `Settings` -> `Domains & Routes`
-- Pages：`Workers & Pages` -> Pages 项目 -> `Custom domains`
-
-项目不依赖需要付费的第三方服务。Telegram、Email、`crt.sh`、`rdap.org` 等外部服务可能受网络环境影响，国内用户建议优先使用企业微信、飞书、钉钉或自定义 Webhook。
-
-## 常见问题
-
-### GitHub Actions 提示 Cloudflare Authentication error
-
-通常是 GitHub Secrets 配置错误或 API Token 权限不足。请检查：
-
-- `CLOUDFLARE_API_TOKEN` 是否正确。
-- `CLOUDFLARE_ACCOUNT_ID` 是否正确。
-- API Token 是否包含 Workers、Pages、D1 和 Account Settings 权限。
-- Token 的账号资源范围是否包含目标 Cloudflare 账号。
-
-### Worker 报错 Cannot read properties of undefined (reading 'prepare')
-
-说明 D1 没有正确绑定。请检查：
-
-- `worker/wrangler.toml` 中 `binding` 是否为 `DB`。
-- `database_id` 是否填写正确。
-- GitHub Actions 中 `D1_DATABASE_ID` 是否已配置。
-
-### 登录后台提示认证未配置
-
-请配置 `ADMIN_API_KEY`。本项目兼容旧的 `ADMIN_PASSWORD`，但推荐使用 `ADMIN_API_KEY`。
-
-### `/api/monitors/public` 返回前端页面
-
-说明 Pages 代理没有拿到 Worker 地址。请在 Cloudflare Pages 环境变量中配置 `WORKER_URL`，保存后重新部署前端。
-
-### 登录接口返回 500，并提示 WORKER_URL environment variable is not set
-
-这是 Pages 项目缺少 `WORKER_URL`。请在 Cloudflare Pages 项目环境变量中添加：
-
-```text
-WORKER_URL=https://你的 Worker 地址
-```
-
-保存后必须重新部署 Pages，否则新变量不会生效。
-
-### 接口返回 D1_ERROR: no such table: monitors
-
-说明当前 Worker 绑定的 D1 数据库还没有初始化表结构，或 `D1_DATABASE_ID` 绑定到了另一个空库。
-
-先确认 D1：
-
-```bash
-npx wrangler d1 list
-```
-
-然后初始化远程数据库：
-
-```bash
-npx wrangler d1 execute uptime-db --remote --file=worker/schema.sql
-```
-
-## 目录结构
-
-```text
-Uptime-Monitor/
-├── frontend/
-│   ├── public/
-│   │   └── _worker.js
-│   ├── index.html
-│   ├── src/
-│   ├── vite.config.js
-│   └── package.json
-├── worker/
-│   ├── src/index.ts
-│   ├── schema.sql
-│   ├── wrangler.example.toml
-│   └── package.json
-├── .github/workflows/
-│   └── deploy.yml
-├── docs/
-│   └── LAUNCH.md
-├── README.md
-├── README.en.md
-└── LICENSE
-```
-
-## 许可证
-
-本项目基于 [MIT License](LICENSE) 开源。
+如果需要修改频率，请更改此处的 Cron 表达式。
