@@ -1,7 +1,7 @@
 # Uptime Monitor Configuration
 
 settings:
-  title: "Acofork System Status"
+  title: "楠霖网站服务监测页"
   logo: "https://nanlin.de5.net/favicon.png" # Optional: URL to your logo image
   callback_url: ""
   callback_secret: ""
@@ -37,11 +37,11 @@ settings:
     - id: "cfp"
       label: "Cloudflare Page"
       color: "#D97706"
-    - id: "vercel"
-      label: "Vercel Page"
+    - id: "twikoo"
+      label: "twikoo-sever"
       color: "#000000"
-    - id: "vf"
-      label: "Vercel Function"
+    - id: "wd"
+      label: "WebDav"
       color: "#000000"
     - id: "self"
       label: "Self-Hosted"
@@ -82,9 +82,9 @@ groups:
   - id: "blog"
     name: "楠霖博客 | 主网站"
     monitors:
-      - id: "uptimekuma"
-        name: "UptimeKuma"
-        tags: [zeabur]
+      - id: "main"
+        name: "楠霖博客 | 主网站"
+        tags: [cfw]
         type: "http"
         url: "https://nanlin.de5.net/"
         method: "HEAD"
@@ -99,7 +99,7 @@ groups:
 
       - id: "img"
         name: "楠霖图床系统"
-        tags: [eopage]
+        tags: [cfw]
         type: "http"
         url: "https://img.nanlin.de5.net/"
         method: "HEAD"
@@ -114,7 +114,7 @@ groups:
 
       - id: "front"
         name: "楠霖导航页"
-        tags: [esapage]
+        tags: [cfw]
         type: "http"
         url: "https://bb.nanlin.de5.net/"
         method: "HEAD"
@@ -127,9 +127,9 @@ groups:
         validation:
           status: 200
 
-      - id: "楠霖邮局"
-        name: "博客海外节点"
-        tags: [cfp]
+      - id: "mail"
+        name: "楠霖邮局"
+        tags: [cfw]
         type: "http"
         url: "https://mail.nanlin.de5.net/"
         method: "HEAD"
@@ -144,7 +144,7 @@ groups:
 
       - id: "pinlun"
         name: "博客评论系统"
-        tags: [eo,self]
+        tags: [twikoo,self]
         type: "http"
         url: "https://twikoo-netlify-nanlin.netlify.app/.netlify/functions/twikoo"
         method: "HEAD"
@@ -159,7 +159,7 @@ groups:
 
       - id: "img_webdav"
         name: "图片托管Webdav"
-        tags: [eo,self]
+        tags: [wd,self]
         type: "http"
         url: "https://pan.lansod.cn/"
         method: "HEAD"
